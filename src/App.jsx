@@ -16,7 +16,7 @@ import { UploadPage }             from './pages/UploadPage.jsx';
 
 export default function App() {
   return (
-    <BrowserRouter>
+    <BrowserRouter basename={import.meta.env.BASE_URL}>
       <ToastProvider>
         <Routes>
           <Route element={<AppLayout />}>
