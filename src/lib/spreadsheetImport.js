@@ -6,27 +6,21 @@ import * as XLSX from 'xlsx';
 import { newId } from './store.js';
 
 // ─── Excel date serial → 'YYYY-MM-DD' string ────────────────────────────────
-// Excel day 1 = Jan 1 1900 (with leap-year bug: treats 1900 as leap year)
-// JS: (serial - 25569) * 86400 * 1000 → Unix ms
 function excelDateToISO(serial) {
   if (!serial || isNaN(Number(serial))) return '';
   const n = Number(serial);
-  if (n < 1000) return ''; // clearly not a date (small numbers like UPTO counts)
+  if (n < 1000) return ''; // small numbers are counts/points, not dates
   const date = new Date((n - 25569) * 86400 * 1000);
   if (isNaN(date.getTime())) return '';
   return date.toISOString().slice(0, 10);
 }
 
 // ─── Excel time fraction → '12:30 PM' string ────────────────────────────────
-// Excel stores times as a fraction of a day (0.5 = noon, 0.75 = 6 PM).
-// Some cells are already entered as strings ('1:25pm') — pass those through.
 function excelTimeToString(val) {
   if (!val && val !== 0) return '';
   const str = String(val).trim();
-  // Already a human-readable time string — just normalize casing
   if (isNaN(Number(str))) return str;
   const fraction = Number(str);
-  // Only treat as time if clearly a fraction of a day (0–1)
   if (fraction < 0 || fraction >= 1) return str;
   const totalMinutes = Math.round(fraction * 24 * 60);
   const h24 = Math.floor(totalMinutes / 60) % 24;
@@ -36,7 +30,6 @@ function excelTimeToString(val) {
   return `${h12}:${String(min).padStart(2, '0')} ${ampm}`;
 }
 
-// Is a value truthy / "Yes"
 function isYes(v) {
   if (!v) return false;
   return String(v).toLowerCase().trim() === 'yes' || v === true;
@@ -65,12 +58,42 @@ function parseSeason(v) {
   return match ? parseInt(match[1], 10) : 1;
 }
 
+// ─── Roster ───────────────────────────────────────────────────────────────────
+// Layout: multiple side-by-side tables, each 4 cols wide: [#, Name, Attendance, Wage]
+// Row 0: title, Row 1: dept group headers, Row 2: column headers, Row 3: supervisor names
+// Data rows start at index 4.
+// Groups start at column offsets 1, 5, 9, 13, 17, 21, 25, 29
+function parseRosterSheet(sheet) {
+  const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
+  const lookup = new Map(); // normalized name → { attendance_points, current_wage }
+  const GROUP_NAME_COLS = [1, 5, 9, 13, 17, 21, 25, 29];
+
+  for (let ri = 4; ri < rows.length; ri++) {
+    const row = rows[ri];
+    for (const nameCol of GROUP_NAME_COLS) {
+      const name = String(row[nameCol] || '').trim();
+      if (!name || name.toLowerCase() === 'open') continue;
+
+      const attPts = parseFloat(row[nameCol + 1]);
+      const wage   = parseFloat(row[nameCol + 2]);
+
+      const key = name.toLowerCase().replace(/\s+/g, ' ');
+      lookup.set(key, {
+        attendance_points: isNaN(attPts) ? 0 : attPts,
+        current_wage: isNaN(wage) ? null : wage,
+      });
+    }
+  }
+
+  return lookup;
+}
+
 // ─── Haul Data 25-26 ─────────────────────────────────────────────────────────
 function parseHaulSheet(sheet) {
   const rows = XLSX.utils.sheet_to_json(sheet, { defval: '', raw: true });
   return rows
     .filter((r) => r['First'] && r['Last'] && r['Status'])
-    .filter((r) => !['Status'].includes(String(r['First']).trim())) // skip extra header rows
+    .filter((r) => !['Status'].includes(String(r['First']).trim()))
     .map((r) => ({
       id: newId(),
       status: String(r['Status'] || '').trim(),
@@ -82,7 +105,6 @@ function parseHaulSheet(sheet) {
       department: String(r['Department'] || '').trim(),
       shift: String(r['Shift'] || '').trim(),
       supervisor: String(r['Supervisor'] || '').trim(),
-      // Haul checklist
       photo_done: isYes(r['Photo Done']),
       haul_truck_signoff: isYes(r['Haul Truck Sign Off']),
       stockpile_testing: isYes(r['Passed Stockplie Testing']),
@@ -101,12 +123,11 @@ function parseHaulSheet(sheet) {
       voluntary_term: String(r['Voluntary Term'] || '').trim(),
       intent_to_return: String(r['Intent to Return'] || '').trim(),
       season_count: parseSeason(r['Season']),
-      current_wage: parseWage(r['Wage']),
-      starting_wage: parseWage(r['Wage']),
+      current_wage: parseWage(r[' Wage ']),
+      starting_wage: parseWage(r[' Wage ']),
       first_day_checkin: excelDateToISO(r['First Day Check in']),
       thirty_day_checkin: excelDateToISO(r['30 Day Check in']),
       notes: String(r['Notes'] || '').trim(),
-      attendance_points: parseFloat(r['UPTO'] || r['Points'] || r['Attendance Points'] || r['Pts'] || 0) || 0,
       _source_sheet: 'Haul Data 25-26',
     }));
 }
@@ -127,7 +148,6 @@ function parseFuelerSheet(sheet) {
       department: String(r['Department'] || '').trim(),
       shift: String(r['Shift'] || '').trim(),
       supervisor: String(r['Supervisor'] || '').trim(),
-      // Non-haul checklist
       training_signoff: isYes(r['Training Sign Off Rcvd']),
       photo_done: isYes(r['Photo Done']),
       physical_done: isYes(r['Physical']) || !!excelDateToISO(r['Physical']),
@@ -136,20 +156,19 @@ function parseFuelerSheet(sheet) {
       term_date: (() => {
         const status = String(r['Status'] || '').trim();
         const val = r['Today/Term'];
-        if (['Termed','DNA','T/H','DNA'].includes(status)) return excelDateToISO(val);
+        if (['Termed','DNA','T/H'].includes(status)) return excelDateToISO(val);
         return '';
       })(),
       term_reason: String(r['Term Reason'] || '').trim(),
       voluntary_term: String(r['Voluntary Term'] || '').trim(),
       intent_to_return: String(r['Intent to Return'] || '').trim(),
       season_count: parseSeason(r['Season']),
-      current_wage: parseWage(r['Wage']),
-      starting_wage: parseWage(r['Wage']),
+      current_wage: parseWage(r[' Wage ']),
+      starting_wage: parseWage(r[' Wage ']),
       ninety_day_raise_given: isYes(r['90 Day Wage Review']),
       first_day_checkin: excelDateToISO(r['First Day Check In']),
       thirty_day_checkin: excelDateToISO(r['30 Day Check In']),
       notes: String(r['Notes'] || '').trim(),
-      attendance_points: parseFloat(r['UPTO'] || r['Points'] || r['Attendance Points'] || r['Pts'] || 0) || 0,
       _source_sheet: 'Fueler-HEO-Salt-Mag',
     }));
 }
@@ -193,12 +212,11 @@ function parseTermedSheet(sheet) {
       voluntary_term: String(r['Voluntary Term'] || '').trim(),
       intent_to_return: String(r['Intent to Return'] || '').trim(),
       season_count: parseSeason(r['Season']),
-      current_wage: parseWage(r['Wage']),
-      starting_wage: parseWage(r['Wage']),
+      current_wage: parseWage(r[' Wage ']),
+      starting_wage: parseWage(r[' Wage ']),
       first_day_checkin: excelDateToISO(r['First Day Check In']),
       thirty_day_checkin: excelDateToISO(r['30 Day Check In']),
       notes: String(r['Notes'] || '').trim(),
-      attendance_points: parseFloat(r['UPTO'] || r['Points'] || r['Attendance Points'] || r['Pts'] || 0) || 0,
       _source_sheet: 'Termed or DNA',
     }));
 }
@@ -227,20 +245,17 @@ function parseConvertedSheet(sheet) {
       voluntary_term: String(r['Voluntary Term'] || '').trim(),
       intent_to_return: String(r['Intent to Return'] || '').trim(),
       season_count: parseSeason(r['Season']),
-      current_wage: parseWage(r['Wage']),
-      starting_wage: parseWage(r['Wage']),
+      current_wage: parseWage(r[' Wage ']),
+      starting_wage: parseWage(r[' Wage ']),
       first_day_checkin: excelDateToISO(r['First Day Check In']),
       thirty_day_checkin: excelDateToISO(r['30 Day Check In']),
       notes: String(r['Notes'] || '').trim(),
-      attendance_points: parseFloat(r['UPTO'] || r['Points'] || r['Attendance Points'] || r['Pts'] || 0) || 0,
       _source_sheet: 'Converted',
     }));
 }
 
 // ─── Injuries.Incidents ───────────────────────────────────────────────────────
 function parseInjuriesSheet(sheet) {
-  // Row 1 (index 0) has a stray cell; actual headers are on row 2 (index 1).
-  // range: 1 tells SheetJS to treat row index 1 as the header row.
   const rows = XLSX.utils.sheet_to_json(sheet, { defval: '', raw: true, range: 1 });
   return rows
     .filter((r) => r['First Name'] || r['Last Name'])
@@ -271,16 +286,16 @@ export function parseCompassTracker(arrayBuffer) {
     return found ? workbook.Sheets[found] : null;
   };
 
-  const haulWorkers      = get('hauldata25-26')      ? parseHaulSheet(get('hauldata25-26'))         : [];
-  const fuelerWorkers    = get('fueler-heo-salt-mag') ? parseFuelerSheet(get('fueler-heo-salt-mag')) : [];
-  const waitlistWorkers  = get('waitlist-furlough')   ? parseWaitlistSheet(get('waitlist-furlough')) : [];
+  const haulWorkers      = get('hauldata25-26')       ? parseHaulSheet(get('hauldata25-26'))          : [];
+  const fuelerWorkers    = get('fueler-heo-salt-mag')  ? parseFuelerSheet(get('fueler-heo-salt-mag'))  : [];
+  const waitlistWorkers  = get('waitlist-furlough')    ? parseWaitlistSheet(get('waitlist-furlough'))  : [];
   const termedWorkers    = get('termeddna') || get('termeddordna')
     ? parseTermedSheet(get('termeddna') || get('termeddordna'))
     : [];
-  const convertedWorkers = get('converted')           ? parseConvertedSheet(get('converted'))       : [];
-  const injuries         = get('injuries.incidents')  ? parseInjuriesSheet(get('injuries.incidents')): [];
+  const convertedWorkers = get('converted')            ? parseConvertedSheet(get('converted'))         : [];
+  const injuries         = get('injuries.incidents')   ? parseInjuriesSheet(get('injuries.incidents')) : [];
 
-  // Merge all worker sources, deduplicate by Bold ID (keep first occurrence)
+  // Deduplicate workers by Bold ID, then by name
   const allWorkers = [
     ...haulWorkers,
     ...fuelerWorkers,
@@ -303,6 +318,21 @@ export function parseCompassTracker(arrayBuffer) {
     } else {
       seen.add(key);
       workers.push(w);
+    }
+  }
+
+  // Apply Roster sheet — the authoritative source for current attendance points and wages.
+  // Matches by "First Last" name (normalized). Overwrites current_wage and sets attendance_points.
+  const rosterSheet = get('roster');
+  if (rosterSheet) {
+    const rosterLookup = parseRosterSheet(rosterSheet);
+    for (const w of workers) {
+      const key = `${w.first_name} ${w.last_name}`.toLowerCase().replace(/\s+/g, ' ');
+      const rData = rosterLookup.get(key);
+      if (rData) {
+        w.attendance_points = rData.attendance_points;
+        if (rData.current_wage != null) w.current_wage = rData.current_wage;
+      }
     }
   }
 
