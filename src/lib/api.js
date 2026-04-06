@@ -88,6 +88,32 @@ export async function deleteInjury(id) {
   return store.remove('injuries', id);
 }
 
+// ─── Holiday Records ─────────────────────────────────────────────────────────
+
+export async function getHolidayRecords() {
+  return store.getAll('holiday_records');
+}
+
+export async function upsertHolidayRecord(holidayKey, year, patch) {
+  const all = store.getAll('holiday_records');
+  const existing = all.find((r) => r.holiday_key === holidayKey && r.year === year);
+  if (existing) {
+    return store.update('holiday_records', existing.id, patch);
+  }
+  return store.insert('holiday_records', { holiday_key: holidayKey, year, ...patch });
+}
+
+// ─── Breakfast Checklist ─────────────────────────────────────────────────────
+
+export async function getBreakfastChecklist() {
+  const raw = localStorage.getItem('compass_breakfast_checklist');
+  return raw ? JSON.parse(raw) : {};
+}
+
+export async function saveBreakfastChecklist(state) {
+  localStorage.setItem('compass_breakfast_checklist', JSON.stringify(state));
+}
+
 // ─── Notes ───────────────────────────────────────────────────────────────────
 
 export async function getNotes(workerId) {

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Plus, X } from 'lucide-react';
+import { Plus, X, AlertTriangle } from 'lucide-react';
 import { getWorkers, getIncidents, createIncident, deleteIncident } from '../lib/api.js';
 import {
   getRollingTotal, getActiveIncidents, getCurrentCALevel,
@@ -12,11 +12,16 @@ import { Button } from '../components/ui/Button.jsx';
 import { Modal } from '../components/ui/Modal.jsx';
 import { Select } from '../components/ui/Input.jsx';
 import { Input, Textarea } from '../components/ui/Input.jsx';
-import { Card, CardHeader } from '../components/ui/Card.jsx';
+import { Card, CardHeader, CardBody } from '../components/ui/Card.jsx';
 import { FilterTiles } from '../components/ui/FilterTiles.jsx';
 import { useToast } from '../components/ui/Toast.jsx';
 import { PageLoader } from '../components/ui/LoadingSpinner.jsx';
 import { format, parseISO } from 'date-fns';
+import {
+  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell,
+} from 'recharts';
+
+const BUCKET_COLORS = ['#10b981', '#f59e0b', '#f97316', '#ef4444', '#b91c1c'];
 
 function caVariant(level) {
   if (!level) return 'gray';
@@ -27,7 +32,6 @@ function caVariant(level) {
 }
 
 function IncidentBadge({ total }) {
-  if (total >= 8) return <Badge variant="red">{total}</Badge>;
   if (total >= 7) return <Badge variant="red">{total}</Badge>;
   if (total >= 5) return <Badge variant="orange">{total}</Badge>;
   if (total >= 3) return <Badge variant="yellow">{total}</Badge>;
@@ -39,7 +43,6 @@ export function AttendancePage() {
   const [allIncidents, setAllIncidents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
-  const [selectedWorker, setSelectedWorker] = useState(null);
   const [filterWorker, setFilterWorker] = useState('');
   const [tileCA, setTileCA] = useState(null);
   const toast = useToast();
@@ -48,13 +51,12 @@ export function AttendancePage() {
 
   useEffect(() => {
     Promise.all([getWorkers(), getIncidents()]).then(([w, i]) => {
-      setWorkers(w.filter((wk) => wk.status === 'Active' || allIncidents.some((inc) => inc.worker_id === wk.id)));
+      setWorkers(w);
       setAllIncidents(i);
       setLoading(false);
     });
   }, []);
 
-  // Reload after adding
   const refresh = () => {
     Promise.all([getWorkers(), getIncidents()]).then(([w, i]) => {
       setWorkers(w);
@@ -90,8 +92,8 @@ export function AttendancePage() {
 
   if (loading) return <PageLoader />;
 
-  // Build per-worker summaries
   const activeWorkers = workers.filter((w) => w.status === 'Active');
+
   const summaries = activeWorkers.map((w) => {
     const wInc = allIncidents.filter((i) => i.worker_id === w.id);
     const importedPoints = parseFloat(w.attendance_points) || 0;
@@ -105,7 +107,42 @@ export function AttendancePage() {
     };
   }).sort((a, b) => (b.rolling + b.importedPoints) - (a.rolling + a.importedPoints));
 
-  // CA-level tile counts
+  // ── Alert: near termination ────────────────────────────────────────────────
+  const nearTerm = summaries.filter((s) => (s.rolling + s.importedPoints) >= 7);
+
+  // ── Chart data ─────────────────────────────────────────────────────────────
+  const ptsBuckets = [
+    { name: 'Clean (0)',  color: BUCKET_COLORS[0], value: summaries.filter((s) => (s.rolling + s.importedPoints) === 0).length },
+    { name: '0.5 – 2',   color: BUCKET_COLORS[1], value: summaries.filter((s) => { const t = s.rolling + s.importedPoints; return t > 0 && t < 3; }).length },
+    { name: '3 – 4',     color: BUCKET_COLORS[2], value: summaries.filter((s) => { const t = s.rolling + s.importedPoints; return t >= 3 && t < 5; }).length },
+    { name: '5 – 6',     color: BUCKET_COLORS[3], value: summaries.filter((s) => { const t = s.rolling + s.importedPoints; return t >= 5 && t < 7; }).length },
+    { name: '7+',        color: BUCKET_COLORS[4], value: summaries.filter((s) => (s.rolling + s.importedPoints) >= 7).length },
+  ];
+
+  const deptTotals = {};
+  summaries.forEach(({ worker: w, rolling, importedPoints }) => {
+    const d = w.department || 'Unknown';
+    deptTotals[d] = (deptTotals[d] || 0) + rolling + importedPoints;
+  });
+  const deptChartData = Object.entries(deptTotals)
+    .sort((a, b) => b[1] - a[1])
+    .map(([name, value]) => ({ name, value: Math.round(value * 10) / 10 }));
+
+  const monthData = (() => {
+    const counts = {};
+    allIncidents.forEach((inc) => {
+      if (!inc.date) return;
+      const key = format(parseISO(inc.date), 'yyyy-MM');
+      const label = format(parseISO(inc.date), 'MMM yy');
+      if (!counts[key]) counts[key] = { name: label, value: 0 };
+      counts[key].value++;
+    });
+    return Object.entries(counts)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([, v]) => v);
+  })();
+
+  // ── Tiles & filters ────────────────────────────────────────────────────────
   const caTiles = [
     { label: 'No Action',         value: 'none',                       color: 'gray',   count: summaries.filter((s) => !s.caLevel).length },
     { label: 'Verbal Warning',    value: 'Verbal Warning',             color: 'yellow', count: summaries.filter((s) => s.caLevel === 'Verbal Warning').length },
@@ -125,21 +162,164 @@ export function AttendancePage() {
 
   return (
     <div className="space-y-5">
+      {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-bold text-gray-900">Attendance</h1>
-          <p className="text-sm text-gray-500">Rolling 6-month incident tracking · {displayed.length} workers shown</p>
+          <p className="text-sm text-gray-500">Rolling 6-month incident tracking · {activeWorkers.length} active workers</p>
         </div>
         <Button onClick={() => setModalOpen(true)}>
           <Plus size={15} /> Log Incident
         </Button>
       </div>
 
-      {/* CA level tiles */}
-      <div className="space-y-2">
-        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Filter by CA Level</p>
-        <FilterTiles tiles={caTiles} selected={tileCA} onSelect={setTileCA} />
-      </div>
+      {/* ── Near-termination alert ── */}
+      {nearTerm.length > 0 && (
+        <div className="bg-red-50 border border-red-200 rounded-xl p-4 space-y-3">
+          <div className="flex items-center gap-2">
+            <AlertTriangle size={16} className="text-red-600 shrink-0" />
+            <h2 className="text-sm font-semibold text-red-800">
+              {nearTerm.length} worker{nearTerm.length !== 1 ? 's' : ''} at or near termination — 7+ points
+            </h2>
+          </div>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-2">
+            {nearTerm.map(({ worker: w, rolling, importedPoints, caLevel }) => {
+              const total = rolling + importedPoints;
+              return (
+                <div key={w.id} className="flex items-center justify-between bg-white border border-red-100 rounded-lg px-4 py-2.5">
+                  <div>
+                    <Link to={`/workers/${w.id}`} className="font-medium text-red-700 hover:underline text-sm">
+                      {w.first_name} {w.last_name}
+                    </Link>
+                    <p className="text-xs text-gray-500 mt-0.5">{w.department} · {w.supervisor}</p>
+                  </div>
+                  <div className="flex items-center gap-2.5">
+                    {caLevel && <Badge variant={caVariant(caLevel)}>{caLevel}</Badge>}
+                    <span className={`text-xl font-bold ${total >= 8 ? 'text-red-700' : 'text-orange-600'}`}>
+                      {total}
+                    </span>
+                    <span className="text-xs text-gray-400">pts</span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* ── Charts ── */}
+      {summaries.length > 0 && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+
+          {/* Points distribution */}
+          <Card>
+            <CardHeader>
+              <h2 className="text-sm font-semibold text-gray-700">Points Distribution</h2>
+            </CardHeader>
+            <CardBody>
+              <ResponsiveContainer width="100%" height={200}>
+                <BarChart data={ptsBuckets} margin={{ right: 16 }}>
+                  <XAxis dataKey="name" tick={{ fontSize: 11 }} />
+                  <YAxis tick={{ fontSize: 11 }} allowDecimals={false} />
+                  <Tooltip formatter={(v) => [v, 'Workers']} />
+                  <Bar dataKey="value" radius={[4, 4, 0, 0]}>
+                    {ptsBuckets.map((b, i) => (
+                      <Cell key={i} fill={b.color} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </CardBody>
+          </Card>
+
+          {/* Total points by department */}
+          <Card>
+            <CardHeader>
+              <h2 className="text-sm font-semibold text-gray-700">Total Points by Department</h2>
+            </CardHeader>
+            <CardBody>
+              {deptChartData.length === 0
+                ? <p className="text-sm text-gray-400">No data.</p>
+                : (
+                  <ResponsiveContainer width="100%" height={200}>
+                    <BarChart data={deptChartData} layout="vertical" margin={{ left: 90, right: 16 }}>
+                      <XAxis type="number" tick={{ fontSize: 11 }} allowDecimals={false} />
+                      <YAxis type="category" dataKey="name" tick={{ fontSize: 11 }} width={90} />
+                      <Tooltip formatter={(v) => [v, 'Total pts']} />
+                      <Bar dataKey="value" fill="#f97316" radius={[0, 4, 4, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                )}
+            </CardBody>
+          </Card>
+
+          {/* Monthly incident trend */}
+          <Card>
+            <CardHeader>
+              <h2 className="text-sm font-semibold text-gray-700">Incidents Logged by Month</h2>
+            </CardHeader>
+            <CardBody>
+              {monthData.length === 0
+                ? <p className="text-sm text-gray-400">No incidents logged yet.</p>
+                : (
+                  <ResponsiveContainer width="100%" height={200}>
+                    <BarChart data={monthData} margin={{ right: 16 }}>
+                      <XAxis dataKey="name" tick={{ fontSize: 11 }} />
+                      <YAxis tick={{ fontSize: 11 }} allowDecimals={false} />
+                      <Tooltip formatter={(v) => [v, 'Incidents']} />
+                      <Bar dataKey="value" fill="#3b82f6" radius={[4, 4, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                )}
+            </CardBody>
+          </Card>
+
+          {/* CA level breakdown */}
+          <Card>
+            <CardHeader>
+              <h2 className="text-sm font-semibold text-gray-700">Workers by CA Level</h2>
+            </CardHeader>
+            <CardBody>
+              <ResponsiveContainer width="100%" height={200}>
+                <BarChart
+                  data={[
+                    { name: 'Clean',        value: summaries.filter((s) => !s.caLevel).length,                                          fill: '#10b981' },
+                    { name: 'Verbal',       value: summaries.filter((s) => s.caLevel === 'Verbal Warning').length,                      fill: '#f59e0b' },
+                    { name: 'Written',      value: summaries.filter((s) => s.caLevel === 'Written Warning').length,                     fill: '#f97316' },
+                    { name: 'Final',        value: summaries.filter((s) => s.caLevel === 'Final Written + Suspension').length,          fill: '#ef4444' },
+                    { name: 'Term Level',   value: summaries.filter((s) => s.caLevel === 'Termination').length,                         fill: '#b91c1c' },
+                  ]}
+                  margin={{ right: 16 }}
+                >
+                  <XAxis dataKey="name" tick={{ fontSize: 11 }} />
+                  <YAxis tick={{ fontSize: 11 }} allowDecimals={false} />
+                  <Tooltip formatter={(v) => [v, 'Workers']} />
+                  <Bar dataKey="value" radius={[4, 4, 0, 0]}>
+                    {[
+                      { name: 'Clean',      fill: '#10b981' },
+                      { name: 'Verbal',     fill: '#f59e0b' },
+                      { name: 'Written',    fill: '#f97316' },
+                      { name: 'Final',      fill: '#ef4444' },
+                      { name: 'Term Level', fill: '#b91c1c' },
+                    ].map((d, i) => (
+                      <Cell key={i} fill={d.fill} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </CardBody>
+          </Card>
+
+        </div>
+      )}
+
+      {/* ── CA level filter tiles ── */}
+      {caTiles.length > 0 && (
+        <div className="space-y-2">
+          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Filter by CA Level</p>
+          <FilterTiles tiles={caTiles} selected={tileCA} onSelect={setTileCA} />
+        </div>
+      )}
 
       {/* Threshold reference */}
       <div className="flex gap-3 flex-wrap">
@@ -152,16 +332,19 @@ export function AttendancePage() {
         ))}
       </div>
 
-      {/* Filter */}
-      <select value={filterWorker} onChange={(e) => setFilterWorker(e.target.value)}
-        className="border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 w-64">
+      {/* Worker filter */}
+      <select
+        value={filterWorker}
+        onChange={(e) => setFilterWorker(e.target.value)}
+        className="border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 w-64"
+      >
         <option value="">All Active Workers</option>
         {activeWorkers.map((w) => (
           <option key={w.id} value={w.id}>{w.first_name} {w.last_name}</option>
         ))}
       </select>
 
-      {/* Worker attendance rows */}
+      {/* ── Worker attendance cards ── */}
       <div className="space-y-3">
         {displayed.map(({ worker: w, incidents, rolling, importedPoints, caLevel, ncns12mo }) => (
           <Card key={w.id}>
@@ -171,9 +354,7 @@ export function AttendancePage() {
                   {w.first_name} {w.last_name}
                 </Link>
                 <span className="text-xs text-gray-400">{w.department} · {w.supervisor}</span>
-                {ncns12mo >= 2 && (
-                  <Badge variant="red">NCNS ×{ncns12mo}</Badge>
-                )}
+                {ncns12mo >= 2 && <Badge variant="red">NCNS ×{ncns12mo}</Badge>}
               </div>
               <div className="flex items-center gap-3">
                 {caLevel && <Badge variant={caVariant(caLevel)}>{caLevel}</Badge>}
@@ -190,7 +371,6 @@ export function AttendancePage() {
               </div>
             </div>
 
-            {/* Incident rows */}
             {getActiveIncidents(incidents).length > 0 && (
               <div className="divide-y divide-gray-50">
                 {getActiveIncidents(incidents)
@@ -208,6 +388,7 @@ export function AttendancePage() {
                   ))}
               </div>
             )}
+
             {importedPoints > 0 && (
               <div className="px-5 py-2 flex items-center justify-between text-xs bg-amber-50/60 border-t border-amber-100">
                 <span className="text-amber-700">Roster baseline (imported from spreadsheet)</span>
@@ -218,7 +399,7 @@ export function AttendancePage() {
         ))}
       </div>
 
-      {/* Add Incident Modal */}
+      {/* Log Incident Modal */}
       <Modal open={modalOpen} onClose={() => setModalOpen(false)} title="Log Attendance Incident">
         <div className="space-y-4">
           <Select

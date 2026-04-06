@@ -13,6 +13,8 @@ import { ConversionsPage }        from './pages/ConversionsPage.jsx';
 import { InjuriesPage }           from './pages/InjuriesPage.jsx';
 import { AnalyticsPage }          from './pages/AnalyticsPage.jsx';
 import { UploadPage }             from './pages/UploadPage.jsx';
+import { ResourcesPage }          from './pages/ResourcesPage.jsx';
+import { RecognitionPage }        from './pages/RecognitionPage.jsx';
 
 export default function App() {
   return (
@@ -33,6 +35,8 @@ export default function App() {
             <Route path="injuries"         element={<InjuriesPage />} />
             <Route path="analytics"        element={<AnalyticsPage />} />
             <Route path="upload"           element={<UploadPage />} />
+            <Route path="resources"        element={<ResourcesPage />} />
+            <Route path="recognition"      element={<RecognitionPage />} />
           </Route>
         </Routes>
       </ToastProvider>
