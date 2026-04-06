@@ -94,14 +94,16 @@ export function AttendancePage() {
   const activeWorkers = workers.filter((w) => w.status === 'Active');
   const summaries = activeWorkers.map((w) => {
     const wInc = allIncidents.filter((i) => i.worker_id === w.id);
+    const importedPoints = parseFloat(w.attendance_points) || 0;
     return {
       worker: w,
       incidents: wInc,
       rolling: getRollingTotal(wInc),
+      importedPoints,
       caLevel: getCurrentCALevel(wInc),
       ncns12mo: getNCNSCount(wInc, 365),
     };
-  }).sort((a, b) => b.rolling - a.rolling);
+  }).sort((a, b) => (b.rolling + b.importedPoints) - (a.rolling + a.importedPoints));
 
   // CA-level tile counts
   const caTiles = [
@@ -161,7 +163,7 @@ export function AttendancePage() {
 
       {/* Worker attendance rows */}
       <div className="space-y-3">
-        {displayed.map(({ worker: w, incidents, rolling, caLevel, ncns12mo }) => (
+        {displayed.map(({ worker: w, incidents, rolling, importedPoints, caLevel, ncns12mo }) => (
           <Card key={w.id}>
             <div className="px-5 py-3 flex items-center justify-between border-b border-gray-100">
               <div className="flex items-center gap-3">
@@ -175,7 +177,10 @@ export function AttendancePage() {
               </div>
               <div className="flex items-center gap-3">
                 {caLevel && <Badge variant={caVariant(caLevel)}>{caLevel}</Badge>}
-                <IncidentBadge total={rolling} />
+                {importedPoints > 0 && (
+                  <span className="text-xs text-amber-600 font-medium">{importedPoints} imported</span>
+                )}
+                <IncidentBadge total={rolling + importedPoints} />
                 <Button size="sm" variant="secondary" onClick={() => {
                   setForm((f) => ({ ...f, worker_id: w.id }));
                   setModalOpen(true);
@@ -201,6 +206,12 @@ export function AttendancePage() {
                       </button>
                     </div>
                   ))}
+              </div>
+            )}
+            {importedPoints > 0 && (
+              <div className="px-5 py-2 flex items-center justify-between text-xs bg-amber-50/60 border-t border-amber-100">
+                <span className="text-amber-700">Roster baseline (imported from spreadsheet)</span>
+                <span className="font-semibold text-amber-700">{importedPoints} pts</span>
               </div>
             )}
           </Card>

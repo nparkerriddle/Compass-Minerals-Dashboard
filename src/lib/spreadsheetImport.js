@@ -106,6 +106,7 @@ function parseHaulSheet(sheet) {
       first_day_checkin: excelDateToISO(r['First Day Check in']),
       thirty_day_checkin: excelDateToISO(r['30 Day Check in']),
       notes: String(r['Notes'] || '').trim(),
+      attendance_points: parseFloat(r['UPTO'] || r['Points'] || r['Attendance Points'] || r['Pts'] || 0) || 0,
       _source_sheet: 'Haul Data 25-26',
     }));
 }
@@ -148,6 +149,7 @@ function parseFuelerSheet(sheet) {
       first_day_checkin: excelDateToISO(r['First Day Check In']),
       thirty_day_checkin: excelDateToISO(r['30 Day Check In']),
       notes: String(r['Notes'] || '').trim(),
+      attendance_points: parseFloat(r['UPTO'] || r['Points'] || r['Attendance Points'] || r['Pts'] || 0) || 0,
       _source_sheet: 'Fueler-HEO-Salt-Mag',
     }));
 }
@@ -196,6 +198,7 @@ function parseTermedSheet(sheet) {
       first_day_checkin: excelDateToISO(r['First Day Check In']),
       thirty_day_checkin: excelDateToISO(r['30 Day Check In']),
       notes: String(r['Notes'] || '').trim(),
+      attendance_points: parseFloat(r['UPTO'] || r['Points'] || r['Attendance Points'] || r['Pts'] || 0) || 0,
       _source_sheet: 'Termed or DNA',
     }));
 }
@@ -229,6 +232,7 @@ function parseConvertedSheet(sheet) {
       first_day_checkin: excelDateToISO(r['First Day Check In']),
       thirty_day_checkin: excelDateToISO(r['30 Day Check In']),
       notes: String(r['Notes'] || '').trim(),
+      attendance_points: parseFloat(r['UPTO'] || r['Points'] || r['Attendance Points'] || r['Pts'] || 0) || 0,
       _source_sheet: 'Converted',
     }));
 }

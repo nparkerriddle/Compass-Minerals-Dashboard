@@ -117,6 +117,7 @@ export function WorkerProfilePage() {
                 <InfoRow label="Start Date"   value={worker.start_date ? format(parseISO(worker.start_date), 'MM/dd/yyyy') : null} />
                 <InfoRow label="Days Worked"  value={daysIn} />
                 <InfoRow label="Season #"     value={worker.season_count || 1} />
+                <InfoRow label="Current Wage" value={worker.current_wage ? `$${worker.current_wage}/hr` : null} />
                 <InfoRow label="Intent to Return" value={worker.intent_to_return} />
                 {worker.term_date && <InfoRow label="Term Date" value={format(parseISO(worker.term_date), 'MM/dd/yyyy')} />}
                 {worker.term_reason && <InfoRow label="Term Reason" value={worker.term_reason} />}
@@ -175,6 +176,15 @@ export function WorkerProfilePage() {
                   <p className="text-xs text-gray-500">Current CA level</p>
                 </div>
               </div>
+              {(worker.attendance_points > 0) && (
+                <div className="flex items-center gap-4 mb-3 px-3 py-2 bg-amber-50 border border-amber-100 rounded-md text-xs">
+                  <span className="text-amber-700 font-medium">Roster baseline</span>
+                  <span className="text-amber-600">{worker.attendance_points} pts imported from spreadsheet</span>
+                  {rollingTotal > 0 && (
+                    <span className="text-gray-500 ml-auto">+ {rollingTotal} logged = <span className="font-bold text-gray-700">{worker.attendance_points + rollingTotal} total</span></span>
+                  )}
+                </div>
+              )}
               {incidents.length === 0 ? (
                 <p className="text-sm text-gray-400">No incidents recorded.</p>
               ) : (
