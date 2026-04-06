@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { Plus, X, AlertTriangle } from 'lucide-react';
 import { getWorkers, getIncidents, createIncident, deleteIncident } from '../lib/api.js';
 import {
-  getRollingTotal, getActiveIncidents, getCurrentCALevel,
+  getRollingTotal, getActiveIncidents,
   getIncidentWeight, getNCNSCount,
 } from '../lib/attendancePolicy.js';
 import { INCIDENT_TYPES, CA_THRESHOLDS } from '../lib/constants.js';
@@ -97,12 +97,18 @@ export function AttendancePage() {
   const summaries = activeWorkers.map((w) => {
     const wInc = allIncidents.filter((i) => i.worker_id === w.id);
     const importedPoints = parseFloat(w.attendance_points) || 0;
+    const rolling = getRollingTotal(wInc);
+    const total = rolling + importedPoints;
+    let caLevel = null;
+    for (const t of CA_THRESHOLDS) {
+      if (total >= t.min) caLevel = t.level;
+    }
     return {
       worker: w,
       incidents: wInc,
-      rolling: getRollingTotal(wInc),
+      rolling,
       importedPoints,
-      caLevel: getCurrentCALevel(wInc),
+      caLevel,
       ncns12mo: getNCNSCount(wInc, 365),
     };
   }).sort((a, b) => (b.rolling + b.importedPoints) - (a.rolling + a.importedPoints));
