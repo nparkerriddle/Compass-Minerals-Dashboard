@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { ArrowLeft, Edit, CheckCircle, XCircle, Clock } from 'lucide-react';
-import { getWorker, getIncidents, getNotes, createNote, deleteNote } from '../lib/api.js';
+import { ArrowLeft, Edit, CheckCircle, XCircle, Clock, Save, X } from 'lucide-react';
+import { getWorker, getIncidents, getNotes, createNote, deleteNote, updateWorker } from '../lib/api.js';
 import { getRollingTotal, getActiveIncidents, getCurrentCALevel } from '../lib/attendancePolicy.js';
 import { getDaysWorked, getWageSummary } from '../lib/wagePolicy.js';
 import { HAUL_DEPARTMENTS } from '../lib/constants.js';
@@ -35,6 +35,53 @@ function CheckItem({ label, done, date }) {
   );
 }
 
+// Editable version of CheckItem used when checklist is in edit mode.
+// boolField: the worker field name for boolean toggles (null if date-driven)
+// dateField: the worker field name for the date (null if boolean-only)
+function EditCheckItem({ label, boolField, dateField, draft, onChange }) {
+  const isChecked = boolField ? !!draft[boolField] : !!draft[dateField];
+  const dateVal = dateField ? (draft[dateField] || '') : '';
+
+  const toggleCheck = () => {
+    if (boolField && !dateField) {
+      onChange({ [boolField]: !draft[boolField] });
+    } else if (dateField) {
+      // If toggling off, clear the date
+      if (isChecked) {
+        const patch = { [dateField]: '' };
+        if (boolField) patch[boolField] = false;
+        onChange(patch);
+      } else {
+        // Toggle on without a date — just mark the bool if present
+        if (boolField) onChange({ [boolField]: true });
+      }
+    }
+  };
+
+  return (
+    <div className="flex items-center gap-2 py-1.5">
+      <button type="button" onClick={toggleCheck} className="shrink-0">
+        {isChecked
+          ? <CheckCircle size={15} className="text-green-500" />
+          : <XCircle size={15} className="text-gray-300 hover:text-gray-400" />}
+      </button>
+      <span className={`text-sm ${isChecked ? 'text-gray-700' : 'text-gray-400'} flex-1`}>{label}</span>
+      {dateField && (
+        <input
+          type="date"
+          value={dateVal}
+          onChange={(e) => {
+            const patch = { [dateField]: e.target.value };
+            if (boolField) patch[boolField] = !!e.target.value;
+            onChange(patch);
+          }}
+          className="text-xs border border-gray-200 rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-brand-400 w-32"
+        />
+      )}
+    </div>
+  );
+}
+
 export function WorkerProfilePage() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -44,6 +91,8 @@ export function WorkerProfilePage() {
   const [notes, setNotes] = useState([]);
   const [newNote, setNewNote] = useState('');
   const [loading, setLoading] = useState(true);
+  const [editingChecklist, setEditingChecklist] = useState(false);
+  const [checklistDraft, setChecklistDraft] = useState({});
 
   useEffect(() => {
     Promise.all([getWorker(id), getIncidents(id), getNotes(id)]).then(([w, inc, n]) => {
@@ -65,6 +114,35 @@ export function WorkerProfilePage() {
   const handleDeleteNote = async (noteId) => {
     await deleteNote(noteId);
     setNotes((prev) => prev.filter((n) => n.id !== noteId));
+  };
+
+  const startEditChecklist = () => {
+    setChecklistDraft({
+      bg_date: worker.bg_date || '',
+      dt_date: worker.dt_date || '',
+      ffd_date: worker.ffd_date || '',
+      photo_done: !!worker.photo_done,
+      i9_date: worker.i9_date || '',
+      everify_date: worker.everify_date || '',
+      fcra_date: worker.fcra_date || '',
+      orientation_date: worker.orientation_date || '',
+      first_day_checkin: worker.first_day_checkin || '',
+      thirty_day_checkin: worker.thirty_day_checkin || '',
+      physical_date: worker.physical_date || '',
+      physical_done: !!worker.physical_done,
+      haul_truck_signoff: !!worker.haul_truck_signoff,
+      stockpile_testing: !!worker.stockpile_testing,
+      operator_signoff: !!worker.operator_signoff,
+      training_signoff: !!worker.training_signoff,
+    });
+    setEditingChecklist(true);
+  };
+
+  const handleSaveChecklist = async () => {
+    const updated = await updateWorker(id, checklistDraft);
+    setWorker(updated);
+    setEditingChecklist(false);
+    toast({ message: 'Checklist saved.' });
   };
 
   if (loading) return <PageLoader />;
@@ -127,35 +205,79 @@ export function WorkerProfilePage() {
 
           {/* Onboarding checklist */}
           <Card>
-            <CardHeader><h2 className="text-sm font-semibold text-gray-700">Onboarding Checklist</h2></CardHeader>
+            <CardHeader className="flex items-center justify-between">
+              <h2 className="text-sm font-semibold text-gray-700">Onboarding Checklist</h2>
+              {editingChecklist ? (
+                <div className="flex gap-2">
+                  <Button size="sm" onClick={handleSaveChecklist}><Save size={13} /> Save</Button>
+                  <Button size="sm" variant="secondary" onClick={() => setEditingChecklist(false)}><X size={13} /> Cancel</Button>
+                </div>
+              ) : (
+                <Button size="sm" variant="secondary" onClick={startEditChecklist}><Edit size={13} /> Edit</Button>
+              )}
+            </CardHeader>
             <CardBody className="grid grid-cols-2 gap-x-8">
-              <div>
-                <CheckItem label="Background Check" done={!!worker.bg_date} date={worker.bg_date} />
-                <CheckItem label="Drug Test"        done={!!worker.dt_date}  date={worker.dt_date} />
-                <CheckItem label="Fit for Duty"     done={!!worker.ffd_date} date={worker.ffd_date} />
-                <CheckItem label="Photo"            done={!!worker.photo_done} />
-                <CheckItem label="I-9"              done={!!worker.i9_date}  date={worker.i9_date} />
-                <CheckItem label="E-Verify"         done={!!worker.everify_date} date={worker.everify_date} />
-                <CheckItem label="FCRA"             done={!!worker.fcra_date} date={worker.fcra_date} />
-              </div>
-              <div>
-                <CheckItem label="Orientation"      done={!!worker.orientation_date} date={worker.orientation_date} />
-                <CheckItem label="First Day Check-In" done={!!worker.first_day_checkin} date={worker.first_day_checkin} />
-                <CheckItem label="30-Day Check-In"  done={!!worker.thirty_day_checkin} date={worker.thirty_day_checkin} />
-                {isHaul ? (
-                  <>
-                    <CheckItem label="Physical (Haul)" done={!!worker.physical_date} date={worker.physical_date} />
-                    <CheckItem label="Haul Truck Sign-Off" done={!!worker.haul_truck_signoff} />
-                    <CheckItem label="Stockpile Testing"   done={!!worker.stockpile_testing} />
-                    <CheckItem label="Operator Sign-Off"   done={!!worker.operator_signoff} />
-                  </>
-                ) : (
-                  <>
-                    <CheckItem label="Training Sign-Off" done={!!worker.training_signoff} />
-                    <CheckItem label="Physical"          done={!!worker.physical_date} date={worker.physical_date} />
-                  </>
-                )}
-              </div>
+              {editingChecklist ? (
+                <>
+                  <div>
+                    <EditCheckItem label="Background Check" dateField="bg_date"       draft={checklistDraft} onChange={(p) => setChecklistDraft((d) => ({ ...d, ...p }))} />
+                    <EditCheckItem label="Drug Test"        dateField="dt_date"        draft={checklistDraft} onChange={(p) => setChecklistDraft((d) => ({ ...d, ...p }))} />
+                    <EditCheckItem label="Fit for Duty"     dateField="ffd_date"       draft={checklistDraft} onChange={(p) => setChecklistDraft((d) => ({ ...d, ...p }))} />
+                    <EditCheckItem label="Photo"            boolField="photo_done"     draft={checklistDraft} onChange={(p) => setChecklistDraft((d) => ({ ...d, ...p }))} />
+                    <EditCheckItem label="I-9"              dateField="i9_date"        draft={checklistDraft} onChange={(p) => setChecklistDraft((d) => ({ ...d, ...p }))} />
+                    <EditCheckItem label="E-Verify"         dateField="everify_date"   draft={checklistDraft} onChange={(p) => setChecklistDraft((d) => ({ ...d, ...p }))} />
+                    <EditCheckItem label="FCRA"             dateField="fcra_date"      draft={checklistDraft} onChange={(p) => setChecklistDraft((d) => ({ ...d, ...p }))} />
+                  </div>
+                  <div>
+                    <EditCheckItem label="Orientation"        dateField="orientation_date"   draft={checklistDraft} onChange={(p) => setChecklistDraft((d) => ({ ...d, ...p }))} />
+                    <EditCheckItem label="First Day Check-In" dateField="first_day_checkin"  draft={checklistDraft} onChange={(p) => setChecklistDraft((d) => ({ ...d, ...p }))} />
+                    <EditCheckItem label="30-Day Check-In"    dateField="thirty_day_checkin" draft={checklistDraft} onChange={(p) => setChecklistDraft((d) => ({ ...d, ...p }))} />
+                    {isHaul ? (
+                      <>
+                        <EditCheckItem label="Physical (Haul)"     dateField="physical_date"    boolField="physical_done"    draft={checklistDraft} onChange={(p) => setChecklistDraft((d) => ({ ...d, ...p }))} />
+                        <EditCheckItem label="Haul Truck Sign-Off" boolField="haul_truck_signoff" draft={checklistDraft} onChange={(p) => setChecklistDraft((d) => ({ ...d, ...p }))} />
+                        <EditCheckItem label="Stockpile Testing"   boolField="stockpile_testing"  draft={checklistDraft} onChange={(p) => setChecklistDraft((d) => ({ ...d, ...p }))} />
+                        <EditCheckItem label="Operator Sign-Off"   boolField="operator_signoff"   draft={checklistDraft} onChange={(p) => setChecklistDraft((d) => ({ ...d, ...p }))} />
+                      </>
+                    ) : (
+                      <>
+                        <EditCheckItem label="Training Sign-Off" boolField="training_signoff" draft={checklistDraft} onChange={(p) => setChecklistDraft((d) => ({ ...d, ...p }))} />
+                        <EditCheckItem label="Physical"          dateField="physical_date" boolField="physical_done" draft={checklistDraft} onChange={(p) => setChecklistDraft((d) => ({ ...d, ...p }))} />
+                      </>
+                    )}
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div>
+                    <CheckItem label="Background Check" done={!!worker.bg_date} date={worker.bg_date} />
+                    <CheckItem label="Drug Test"        done={!!worker.dt_date}  date={worker.dt_date} />
+                    <CheckItem label="Fit for Duty"     done={!!worker.ffd_date} date={worker.ffd_date} />
+                    <CheckItem label="Photo"            done={!!worker.photo_done} />
+                    <CheckItem label="I-9"              done={!!worker.i9_date}  date={worker.i9_date} />
+                    <CheckItem label="E-Verify"         done={!!worker.everify_date} date={worker.everify_date} />
+                    <CheckItem label="FCRA"             done={!!worker.fcra_date} date={worker.fcra_date} />
+                  </div>
+                  <div>
+                    <CheckItem label="Orientation"      done={!!worker.orientation_date} date={worker.orientation_date} />
+                    <CheckItem label="First Day Check-In" done={!!worker.first_day_checkin} date={worker.first_day_checkin} />
+                    <CheckItem label="30-Day Check-In"  done={!!worker.thirty_day_checkin} date={worker.thirty_day_checkin} />
+                    {isHaul ? (
+                      <>
+                        <CheckItem label="Physical (Haul)" done={!!worker.physical_date} date={worker.physical_date} />
+                        <CheckItem label="Haul Truck Sign-Off" done={!!worker.haul_truck_signoff} />
+                        <CheckItem label="Stockpile Testing"   done={!!worker.stockpile_testing} />
+                        <CheckItem label="Operator Sign-Off"   done={!!worker.operator_signoff} />
+                      </>
+                    ) : (
+                      <>
+                        <CheckItem label="Training Sign-Off" done={!!worker.training_signoff} />
+                        <CheckItem label="Physical"          done={!!worker.physical_date} date={worker.physical_date} />
+                      </>
+                    )}
+                  </div>
+                </>
+              )}
             </CardBody>
           </Card>
 
