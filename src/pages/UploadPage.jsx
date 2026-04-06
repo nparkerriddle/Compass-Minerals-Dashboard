@@ -46,6 +46,8 @@ export function UploadPage() {
     if (mode === 'replace') {
       saveAll('workers', parsed.workers);
       saveAll('injuries', parsed.injuries);
+      saveAll('incidents', []);
+      saveAll('corrective_actions', []);
     } else {
       // Merge — don't overwrite existing records by bold_id
       const existing = getAll('workers');
