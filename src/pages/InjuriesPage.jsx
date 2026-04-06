@@ -6,12 +6,17 @@ import { DEPARTMENTS, SHIFTS, SUPERVISORS } from '../lib/constants.js';
 import { Button } from '../components/ui/Button.jsx';
 import { Modal } from '../components/ui/Modal.jsx';
 import { Input, Select, Textarea } from '../components/ui/Input.jsx';
-import { Card } from '../components/ui/Card.jsx';
-import { Badge } from '../components/ui/Badge.jsx';
+import { Card, CardHeader, CardBody } from '../components/ui/Card.jsx';
 import { FilterTiles } from '../components/ui/FilterTiles.jsx';
 import { useToast } from '../components/ui/Toast.jsx';
 import { PageLoader } from '../components/ui/LoadingSpinner.jsx';
 import { format, parseISO } from 'date-fns';
+import {
+  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
+  PieChart, Pie, Cell,
+} from 'recharts';
+
+const SHIFT_COLORS = ['#f97316','#ef4444','#3b82f6','#8b5cf6','#10b981','#f59e0b','#06b6d4','#84cc16','#ec4899'];
 
 function countBy(arr, key) {
   return arr.reduce((acc, item) => {
@@ -21,26 +26,14 @@ function countBy(arr, key) {
   }, {});
 }
 
-function topEntries(obj, n = 6) {
+function topEntries(obj, n = 8) {
   return Object.entries(obj).sort((a, b) => b[1] - a[1]).slice(0, n);
 }
 
-const OUTCOMES = ['Nothing', 'Warning', 'Sent Home', 'Missed Time', 'Termination', 'Medical Treatment', 'Hospitalization', 'Near Miss', 'Other'];
-
 const EMPTY_FORM = {
   worker_id: '', first_name: '', last_name: '', date: '', time: '',
-  department: '', shift: '', supervisor: '',
-  outcome: '', notes: '',
+  department: '', shift: '', supervisor: '', notes: '',
 };
-
-function outcomeVariant(outcome) {
-  if (!outcome) return 'gray';
-  if (outcome === 'Termination' || outcome === 'Hospitalization') return 'red';
-  if (outcome === 'Missed Time' || outcome === 'Medical Treatment') return 'orange';
-  if (outcome === 'Sent Home') return 'yellow';
-  if (outcome === 'Near Miss') return 'yellow';
-  return 'gray';
-}
 
 export function InjuriesPage() {
   const [workers, setWorkers] = useState([]);
@@ -61,7 +54,6 @@ export function InjuriesPage() {
 
   const set = (field) => (e) => setForm((f) => ({ ...f, [field]: e.target.value }));
 
-  // Auto-fill worker info when a known worker is selected
   const handleWorkerSelect = (workerId) => {
     const w = workers.find((wk) => wk.id === workerId);
     if (w) {
@@ -93,20 +85,38 @@ export function InjuriesPage() {
 
   if (loading) return <PageLoader />;
 
-  // ── Tile data ──────────────────────────────────────────────────────────────
+  // ── Chart data ─────────────────────────────────────────────────────────────
+  const byDept       = countBy(injuries, 'department');
   const bySupervisor = countBy(injuries, 'supervisor');
-  const byDepartment = countBy(injuries, 'department');
-  const byOutcome    = countBy(injuries, 'outcome');
+  const byShift      = countBy(injuries, 'shift');
 
-  const supervisorTiles = topEntries(bySupervisor).map(([label, count]) => ({ label, count, value: label }));
-  const deptTiles       = topEntries(byDepartment).map(([label, count]) => ({ label, count, value: label }));
-  const outcomeTiles    = topEntries(byOutcome).map(([label, count]) => ({ label, count, value: label }));
+  const deptChartData = topEntries(byDept).map(([name, value]) => ({ name, value }));
+  const supChartData  = topEntries(bySupervisor).map(([name, value]) => ({ name, value }));
+  const shiftChartData = Object.entries(byShift).sort((a, b) => b[1] - a[1]).map(([name, value]) => ({ name, value }));
+
+  const monthData = (() => {
+    const counts = {};
+    injuries.forEach((inj) => {
+      if (!inj.date) return;
+      const d = parseISO(inj.date);
+      const key = format(d, 'yyyy-MM');
+      const label = format(d, 'MMM yy');
+      if (!counts[key]) counts[key] = { name: label, value: 0 };
+      counts[key].value++;
+    });
+    return Object.entries(counts)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([, v]) => v);
+  })();
+
+  // ── Tile data ──────────────────────────────────────────────────────────────
+  const supervisorTiles = topEntries(bySupervisor, 6).map(([label, count]) => ({ label, count, value: label, color: 'red' }));
+  const deptTiles       = topEntries(byDept, 6).map(([label, count]) => ({ label, count, value: label, color: 'orange' }));
 
   const filtered = injuries.filter((inj) => {
     if (!tileFilter.type) return true;
-    if (tileFilter.type === 'supervisor')  return (inj.supervisor  || 'Unknown') === tileFilter.value;
-    if (tileFilter.type === 'department')  return (inj.department  || 'Unknown') === tileFilter.value;
-    if (tileFilter.type === 'outcome')     return (inj.outcome     || 'Unknown') === tileFilter.value;
+    if (tileFilter.type === 'supervisor') return (inj.supervisor || 'Unknown') === tileFilter.value;
+    if (tileFilter.type === 'department') return (inj.department || 'Unknown') === tileFilter.value;
     return true;
   });
 
@@ -128,28 +138,125 @@ export function InjuriesPage() {
         </Button>
       </div>
 
-      {/* Widget tiles */}
-      <div className="space-y-2">
-        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">By Supervisor</p>
-        <FilterTiles
-          tiles={supervisorTiles}
-          selected={tileFilter.type === 'supervisor' ? tileFilter.value : null}
-          onSelect={(v) => handleTile('supervisor', v)}
-        />
-        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide pt-1">By Department</p>
-        <FilterTiles
-          tiles={deptTiles}
-          selected={tileFilter.type === 'department' ? tileFilter.value : null}
-          onSelect={(v) => handleTile('department', v)}
-        />
-        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide pt-1">By Outcome</p>
-        <FilterTiles
-          tiles={outcomeTiles}
-          selected={tileFilter.type === 'outcome' ? tileFilter.value : null}
-          onSelect={(v) => handleTile('outcome', v)}
-        />
-      </div>
+      {/* Charts */}
+      {injuries.length > 0 && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
 
+          {/* By Department */}
+          <Card>
+            <CardHeader>
+              <h2 className="text-sm font-semibold text-gray-700">Incidents by Department</h2>
+            </CardHeader>
+            <CardBody>
+              {deptChartData.length === 0
+                ? <p className="text-sm text-gray-400">No data.</p>
+                : (
+                  <ResponsiveContainer width="100%" height={220}>
+                    <BarChart data={deptChartData} layout="vertical" margin={{ left: 90, right: 16 }}>
+                      <XAxis type="number" tick={{ fontSize: 11 }} allowDecimals={false} />
+                      <YAxis type="category" dataKey="name" tick={{ fontSize: 11 }} width={90} />
+                      <Tooltip formatter={(v) => [v, 'Incidents']} />
+                      <Bar dataKey="value" fill="#f97316" radius={[0, 4, 4, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                )}
+            </CardBody>
+          </Card>
+
+          {/* By Supervisor */}
+          <Card>
+            <CardHeader>
+              <h2 className="text-sm font-semibold text-gray-700">Incidents by Supervisor</h2>
+            </CardHeader>
+            <CardBody>
+              {supChartData.length === 0
+                ? <p className="text-sm text-gray-400">No data.</p>
+                : (
+                  <ResponsiveContainer width="100%" height={220}>
+                    <BarChart data={supChartData} layout="vertical" margin={{ left: 110, right: 16 }}>
+                      <XAxis type="number" tick={{ fontSize: 11 }} allowDecimals={false} />
+                      <YAxis type="category" dataKey="name" tick={{ fontSize: 11 }} width={110} />
+                      <Tooltip formatter={(v) => [v, 'Incidents']} />
+                      <Bar dataKey="value" fill="#ef4444" radius={[0, 4, 4, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                )}
+            </CardBody>
+          </Card>
+
+          {/* By Shift */}
+          <Card>
+            <CardHeader>
+              <h2 className="text-sm font-semibold text-gray-700">Incidents by Shift</h2>
+            </CardHeader>
+            <CardBody className="flex items-center justify-center">
+              {shiftChartData.length === 0
+                ? <p className="text-sm text-gray-400">No data.</p>
+                : (
+                  <ResponsiveContainer width="100%" height={220}>
+                    <PieChart>
+                      <Pie
+                        data={shiftChartData}
+                        cx="50%" cy="50%"
+                        outerRadius={80}
+                        dataKey="value"
+                        label={({ name, value }) => `${name}: ${value}`}
+                        labelLine={false}
+                      >
+                        {shiftChartData.map((_, i) => (
+                          <Cell key={i} fill={SHIFT_COLORS[i % SHIFT_COLORS.length]} />
+                        ))}
+                      </Pie>
+                      <Tooltip formatter={(v) => [v, 'Incidents']} />
+                    </PieChart>
+                  </ResponsiveContainer>
+                )}
+            </CardBody>
+          </Card>
+
+          {/* Monthly trend */}
+          <Card>
+            <CardHeader>
+              <h2 className="text-sm font-semibold text-gray-700">Monthly Incident Trend</h2>
+            </CardHeader>
+            <CardBody>
+              {monthData.length === 0
+                ? <p className="text-sm text-gray-400">No data.</p>
+                : (
+                  <ResponsiveContainer width="100%" height={220}>
+                    <BarChart data={monthData} margin={{ right: 16 }}>
+                      <XAxis dataKey="name" tick={{ fontSize: 11 }} />
+                      <YAxis tick={{ fontSize: 11 }} allowDecimals={false} />
+                      <Tooltip formatter={(v) => [v, 'Incidents']} />
+                      <Bar dataKey="value" fill="#3b82f6" radius={[4, 4, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                )}
+            </CardBody>
+          </Card>
+
+        </div>
+      )}
+
+      {/* Filter tiles */}
+      {injuries.length > 0 && (
+        <div className="space-y-2">
+          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">By Supervisor</p>
+          <FilterTiles
+            tiles={supervisorTiles}
+            selected={tileFilter.type === 'supervisor' ? tileFilter.value : null}
+            onSelect={(v) => handleTile('supervisor', v)}
+          />
+          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide pt-1">By Department</p>
+          <FilterTiles
+            tiles={deptTiles}
+            selected={tileFilter.type === 'department' ? tileFilter.value : null}
+            onSelect={(v) => handleTile('department', v)}
+          />
+        </div>
+      )}
+
+      {/* Table */}
       <Card>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
@@ -161,13 +268,12 @@ export function InjuriesPage() {
                 <th className="text-left px-4 py-3 font-medium text-gray-600">Department</th>
                 <th className="text-left px-4 py-3 font-medium text-gray-600">Shift</th>
                 <th className="text-left px-4 py-3 font-medium text-gray-600">Supervisor</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Outcome</th>
                 <th className="text-left px-4 py-3 font-medium text-gray-600">Notes</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
               {filtered.length === 0 && (
-                <tr><td colSpan={8} className="text-center py-10 text-gray-400">No incidents recorded.</td></tr>
+                <tr><td colSpan={7} className="text-center py-10 text-gray-400">No incidents recorded.</td></tr>
               )}
               {filtered.map((inj) => {
                 const worker = workers.find((w) => w.id === inj.worker_id);
@@ -188,11 +294,6 @@ export function InjuriesPage() {
                     <td className="px-4 py-2.5 text-gray-500">{inj.department || '—'}</td>
                     <td className="px-4 py-2.5 text-gray-400">{inj.shift || '—'}</td>
                     <td className="px-4 py-2.5 text-gray-500">{inj.supervisor || '—'}</td>
-                    <td className="px-4 py-2.5">
-                      {inj.outcome
-                        ? <Badge variant={outcomeVariant(inj.outcome)}>{inj.outcome}</Badge>
-                        : <span className="text-gray-300">—</span>}
-                    </td>
                     <td className="px-4 py-2.5 text-gray-400 max-w-xs truncate">{inj.notes || '—'}</td>
                   </tr>
                 );
@@ -225,14 +326,12 @@ export function InjuriesPage() {
             <option value="">Select…</option>
             {SHIFTS.map((s) => <option key={s} value={s}>{s}</option>)}
           </Select>
-          <Select label="Supervisor" value={form.supervisor} onChange={set('supervisor')}>
-            <option value="">Select…</option>
-            {SUPERVISORS.map((s) => <option key={s} value={s}>{s}</option>)}
-          </Select>
-          <Select label="Outcome" value={form.outcome} onChange={set('outcome')}>
-            <option value="">Select…</option>
-            {OUTCOMES.map((o) => <option key={o} value={o}>{o}</option>)}
-          </Select>
+          <div className="col-span-2">
+            <Select label="Supervisor" value={form.supervisor} onChange={set('supervisor')}>
+              <option value="">Select…</option>
+              {SUPERVISORS.map((s) => <option key={s} value={s}>{s}</option>)}
+            </Select>
+          </div>
           <div className="col-span-2">
             <Textarea label="Notes" rows={4} value={form.notes} onChange={set('notes')} />
           </div>
