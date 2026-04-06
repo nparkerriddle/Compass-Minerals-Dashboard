@@ -1,15 +1,17 @@
 import { useEffect, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { Plus, Search } from 'lucide-react';
 import { getWorkers } from '../lib/api.js';
 import { DEPARTMENTS, SUPERVISORS, STATUSES, SHIFTS } from '../lib/constants.js';
 import { getDaysWorked } from '../lib/wagePolicy.js';
 import { Badge, statusVariant } from '../components/ui/Badge.jsx';
 import { Button } from '../components/ui/Button.jsx';
-import { Input, Select } from '../components/ui/Input.jsx';
-import { FilterTiles } from '../components/ui/FilterTiles.jsx';
+import { Card, CardHeader, CardBody } from '../components/ui/Card.jsx';
 import { PageLoader } from '../components/ui/LoadingSpinner.jsx';
 import { format, parseISO } from 'date-fns';
+import {
+  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell,
+} from 'recharts';
 
 export function WorkerListPage() {
   const [workers, setWorkers] = useState([]);
@@ -19,8 +21,6 @@ export function WorkerListPage() {
   const [filterDept, setFilterDept] = useState('');
   const [filterSupervisor, setFilterSupervisor] = useState('');
   const [filterShift, setFilterShift] = useState('');
-  const [tileDept, setTileDept] = useState(null);
-  const [tileStatus, setTileStatus] = useState(null);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -37,9 +37,7 @@ export function WorkerListPage() {
     const matchDept   = !filterDept   || w.department === filterDept;
     const matchSup    = !filterSupervisor || w.supervisor === filterSupervisor;
     const matchShift  = !filterShift  || w.shift === filterShift;
-    const matchTileDept   = !tileDept   || w.department === tileDept;
-    const matchTileStatus = !tileStatus || w.status === tileStatus;
-    return matchSearch && matchStatus && matchDept && matchSup && matchShift && matchTileDept && matchTileStatus;
+    return matchSearch && matchStatus && matchDept && matchSup && matchShift;
   });
 
   // Tile counts (always from full workers list so tiles don't zero out)
@@ -55,13 +53,14 @@ export function WorkerListPage() {
       return acc;
     }, {});
 
-  const STATUS_COLORS = { Active: 'green', Pending: 'blue', 'Wait List': 'purple', Furlough: 'purple', Termed: 'red', DNA: 'red', 'T/H': 'yellow', 'Inactive - No Response': 'gray' };
-  const statusTiles = STATUSES.filter((s) => statusCounts[s] > 0).map((s) => ({
-    label: s, count: statusCounts[s], value: s, color: STATUS_COLORS[s] || 'blue',
-  }));
-  const deptTiles = Object.entries(deptCounts)
+  const STATUS_HEX = { Active: '#10b981', Pending: '#3b82f6', 'Wait List': '#8b5cf6', Furlough: '#a78bfa', Termed: '#ef4444', DNA: '#b91c1c', 'T/H': '#f59e0b', 'Inactive - No Response': '#94a3b8' };
+  const statusChartData = STATUSES
+    .filter((s) => statusCounts[s] > 0)
+    .map((s) => ({ name: s, value: statusCounts[s], fill: STATUS_HEX[s] || '#3b82f6' }));
+
+  const deptChartData = Object.entries(deptCounts)
     .sort((a, b) => b[1] - a[1])
-    .map(([label, count]) => ({ label, count, value: label, color: 'blue' }));
+    .map(([name, value]) => ({ name, value }));
 
   if (loading) return <PageLoader />;
 
@@ -77,13 +76,52 @@ export function WorkerListPage() {
         </Button>
       </div>
 
-      {/* Widget tiles */}
-      <div className="space-y-2">
-        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">By Status</p>
-        <FilterTiles tiles={statusTiles} selected={tileStatus} onSelect={setTileStatus} />
-        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide pt-1">Active by Department</p>
-        <FilterTiles tiles={deptTiles} selected={tileDept} onSelect={setTileDept} />
-      </div>
+      {/* Charts */}
+      {workers.length > 0 && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+
+          <Card>
+            <CardHeader>
+              <h2 className="text-sm font-semibold text-gray-700">Workers by Status</h2>
+            </CardHeader>
+            <CardBody>
+              <ResponsiveContainer width="100%" height={220}>
+                <BarChart data={statusChartData} layout="vertical" margin={{ left: 130, right: 16 }}>
+                  <XAxis type="number" tick={{ fontSize: 11 }} allowDecimals={false} />
+                  <YAxis type="category" dataKey="name" tick={{ fontSize: 11 }} width={130} />
+                  <Tooltip formatter={(v) => [v, 'Workers']} />
+                  <Bar dataKey="value" radius={[0, 4, 4, 0]}>
+                    {statusChartData.map((d, i) => (
+                      <Cell key={i} fill={d.fill} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </CardBody>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <h2 className="text-sm font-semibold text-gray-700">Active Workers by Department</h2>
+            </CardHeader>
+            <CardBody>
+              {deptChartData.length === 0
+                ? <p className="text-sm text-gray-400">No active workers.</p>
+                : (
+                  <ResponsiveContainer width="100%" height={220}>
+                    <BarChart data={deptChartData} layout="vertical" margin={{ left: 90, right: 16 }}>
+                      <XAxis type="number" tick={{ fontSize: 11 }} allowDecimals={false} />
+                      <YAxis type="category" dataKey="name" tick={{ fontSize: 11 }} width={90} />
+                      <Tooltip formatter={(v) => [v, 'Workers']} />
+                      <Bar dataKey="value" fill="#3b82f6" radius={[0, 4, 4, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                )}
+            </CardBody>
+          </Card>
+
+        </div>
+      )}
 
       {/* Filters */}
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
