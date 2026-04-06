@@ -1,21 +1,24 @@
 import { useEffect, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { getWorkers } from '../lib/api.js';
-import { Badge, statusVariant } from '../components/ui/Badge.jsx';
-import { Button } from '../components/ui/Button.jsx';
-import { Card, CardHeader } from '../components/ui/Card.jsx';
-import { FilterTiles } from '../components/ui/FilterTiles.jsx';
+import { Badge } from '../components/ui/Badge.jsx';
+import { Card, CardHeader, CardBody } from '../components/ui/Card.jsx';
 import { PageLoader } from '../components/ui/LoadingSpinner.jsx';
 import { format, parseISO } from 'date-fns';
 import { Search, ShieldOff } from 'lucide-react';
+import {
+  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
+  PieChart, Pie, Cell,
+} from 'recharts';
+
+const REASON_COLORS = ['#ef4444','#f97316','#f59e0b','#84cc16','#06b6d4','#8b5cf6','#ec4899','#64748b'];
+const VOL_COLORS = ['#10b981', '#ef4444'];
 
 export function TerminationsPage() {
   const [workers, setWorkers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [tab, setTab] = useState('termed'); // 'termed' | 'dna'
-  const [tileReason, setTileReason] = useState(null);
-  const [tileVoluntary, setTileVoluntary] = useState(null);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -28,32 +31,57 @@ export function TerminationsPage() {
   const dna    = workers.filter((w) => w.status === 'DNA');
   const list   = tab === 'dna' ? dna : termed;
 
-  // Tile data
+  // ── Chart data ────────────────────────────────────────────────────────────
+
   const reasonCounts = list.reduce((acc, w) => {
     const r = w.term_reason || 'Unknown';
     acc[r] = (acc[r] || 0) + 1;
     return acc;
   }, {});
-  const reasonTiles = Object.entries(reasonCounts)
+  const reasonChartData = Object.entries(reasonCounts)
     .sort((a, b) => b[1] - a[1]).slice(0, 8)
-    .map(([label, count]) => ({ label, count, value: label }));
+    .map(([name, value]) => ({ name, value }));
 
-  const volTiles = [
-    { label: 'Voluntary',   value: 'Yes', count: list.filter((w) => w.voluntary_term === 'Yes').length },
-    { label: 'Involuntary', value: 'No',  count: list.filter((w) => w.voluntary_term === 'No').length },
-  ].filter((t) => t.count > 0);
+  const volData = [
+    { name: 'Voluntary',   value: list.filter((w) => w.voluntary_term === 'Yes').length },
+    { name: 'Involuntary', value: list.filter((w) => w.voluntary_term === 'No').length },
+    { name: 'Unknown',     value: list.filter((w) => !w.voluntary_term || (w.voluntary_term !== 'Yes' && w.voluntary_term !== 'No')).length },
+  ].filter((d) => d.value > 0);
+
+  const deptCounts = list.reduce((acc, w) => {
+    const d = w.department || 'Unknown';
+    acc[d] = (acc[d] || 0) + 1;
+    return acc;
+  }, {});
+  const deptChartData = Object.entries(deptCounts)
+    .sort((a, b) => b[1] - a[1])
+    .map(([name, value]) => ({ name, value }));
+
+  const monthData = (() => {
+    const counts = {};
+    list.forEach((w) => {
+      const raw = w.term_date;
+      if (!raw) return;
+      const key   = format(parseISO(raw), 'yyyy-MM');
+      const label = format(parseISO(raw), 'MMM yy');
+      if (!counts[key]) counts[key] = { name: label, value: 0 };
+      counts[key].value++;
+    });
+    return Object.entries(counts)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([, v]) => v);
+  })();
+
+  // ── Filtered table ────────────────────────────────────────────────────────
 
   const q = search.toLowerCase();
-  const filtered = list.filter((w) => {
-    const matchSearch = !q
-      || `${w.first_name} ${w.last_name}`.toLowerCase().includes(q)
-      || (w.bold_id || '').toString().includes(q)
-      || (w.phone || '').includes(q)
-      || (w.term_reason || '').toLowerCase().includes(q);
-    const matchReason = !tileReason || (w.term_reason || 'Unknown') === tileReason;
-    const matchVol    = !tileVoluntary || w.voluntary_term === tileVoluntary;
-    return matchSearch && matchReason && matchVol;
-  });
+  const filtered = list.filter((w) =>
+    !q
+    || `${w.first_name} ${w.last_name}`.toLowerCase().includes(q)
+    || (w.bold_id || '').toString().includes(q)
+    || (w.phone || '').includes(q)
+    || (w.term_reason || '').toLowerCase().includes(q)
+  );
 
   return (
     <div className="space-y-5">
@@ -93,17 +121,107 @@ export function TerminationsPage() {
         </button>
       </div>
 
-      {/* Widget tiles */}
-      {reasonTiles.length > 0 && (
-        <div className="space-y-2">
-          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">By Reason</p>
-          <FilterTiles tiles={reasonTiles} selected={tileReason} onSelect={(v) => { setTileReason(v); setTileVoluntary(null); }} />
-          {volTiles.length > 0 && (
-            <>
-              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide pt-1">Voluntary vs Involuntary</p>
-              <FilterTiles tiles={volTiles} selected={tileVoluntary} onSelect={(v) => { setTileVoluntary(v); setTileReason(null); }} />
-            </>
-          )}
+      {/* Charts */}
+      {list.length > 0 && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+
+          {/* By Term Reason */}
+          <Card>
+            <CardHeader>
+              <h2 className="text-sm font-semibold text-gray-700">By Term Reason</h2>
+            </CardHeader>
+            <CardBody>
+              {reasonChartData.length === 0
+                ? <p className="text-sm text-gray-400">No data.</p>
+                : (
+                  <ResponsiveContainer width="100%" height={220}>
+                    <BarChart data={reasonChartData} layout="vertical" margin={{ left: 110, right: 16 }}>
+                      <XAxis type="number" tick={{ fontSize: 11 }} allowDecimals={false} />
+                      <YAxis type="category" dataKey="name" tick={{ fontSize: 11 }} width={110} />
+                      <Tooltip formatter={(v) => [v, 'Workers']} />
+                      <Bar dataKey="value" radius={[0, 4, 4, 0]}>
+                        {reasonChartData.map((_, i) => (
+                          <Cell key={i} fill={REASON_COLORS[i % REASON_COLORS.length]} />
+                        ))}
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                )}
+            </CardBody>
+          </Card>
+
+          {/* Voluntary vs Involuntary */}
+          <Card>
+            <CardHeader>
+              <h2 className="text-sm font-semibold text-gray-700">Voluntary vs Involuntary</h2>
+            </CardHeader>
+            <CardBody className="flex items-center justify-center">
+              {volData.length === 0
+                ? <p className="text-sm text-gray-400">No data.</p>
+                : (
+                  <ResponsiveContainer width="100%" height={220}>
+                    <PieChart>
+                      <Pie
+                        data={volData}
+                        cx="50%" cy="50%"
+                        outerRadius={80}
+                        dataKey="value"
+                        label={({ name, value }) => `${name}: ${value}`}
+                        labelLine={false}
+                      >
+                        {volData.map((_, i) => (
+                          <Cell key={i} fill={VOL_COLORS[i % VOL_COLORS.length]} />
+                        ))}
+                      </Pie>
+                      <Tooltip formatter={(v) => [v, 'Workers']} />
+                    </PieChart>
+                  </ResponsiveContainer>
+                )}
+            </CardBody>
+          </Card>
+
+          {/* By Department */}
+          <Card>
+            <CardHeader>
+              <h2 className="text-sm font-semibold text-gray-700">By Department</h2>
+            </CardHeader>
+            <CardBody>
+              {deptChartData.length === 0
+                ? <p className="text-sm text-gray-400">No data.</p>
+                : (
+                  <ResponsiveContainer width="100%" height={220}>
+                    <BarChart data={deptChartData} layout="vertical" margin={{ left: 90, right: 16 }}>
+                      <XAxis type="number" tick={{ fontSize: 11 }} allowDecimals={false} />
+                      <YAxis type="category" dataKey="name" tick={{ fontSize: 11 }} width={90} />
+                      <Tooltip formatter={(v) => [v, 'Workers']} />
+                      <Bar dataKey="value" fill="#f97316" radius={[0, 4, 4, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                )}
+            </CardBody>
+          </Card>
+
+          {/* Monthly trend */}
+          <Card>
+            <CardHeader>
+              <h2 className="text-sm font-semibold text-gray-700">Monthly Trend</h2>
+            </CardHeader>
+            <CardBody>
+              {monthData.length === 0
+                ? <p className="text-sm text-gray-400">No dated terminations.</p>
+                : (
+                  <ResponsiveContainer width="100%" height={220}>
+                    <BarChart data={monthData} margin={{ right: 16 }}>
+                      <XAxis dataKey="name" tick={{ fontSize: 11 }} />
+                      <YAxis tick={{ fontSize: 11 }} allowDecimals={false} />
+                      <Tooltip formatter={(v) => [v, 'Terminations']} />
+                      <Bar dataKey="value" fill="#64748b" radius={[4, 4, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                )}
+            </CardBody>
+          </Card>
+
         </div>
       )}
 
