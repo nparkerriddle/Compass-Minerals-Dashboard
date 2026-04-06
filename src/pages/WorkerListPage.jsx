@@ -55,12 +55,13 @@ export function WorkerListPage() {
       return acc;
     }, {});
 
+  const STATUS_COLORS = { Active: 'green', Pending: 'blue', 'Wait List': 'purple', Furlough: 'purple', Termed: 'red', DNA: 'red', 'T/H': 'yellow', 'Inactive - No Response': 'gray' };
   const statusTiles = STATUSES.filter((s) => statusCounts[s] > 0).map((s) => ({
-    label: s, count: statusCounts[s], value: s,
+    label: s, count: statusCounts[s], value: s, color: STATUS_COLORS[s] || 'blue',
   }));
   const deptTiles = Object.entries(deptCounts)
     .sort((a, b) => b[1] - a[1])
-    .map(([label, count]) => ({ label, count, value: label }));
+    .map(([label, count]) => ({ label, count, value: label, color: 'blue' }));
 
   if (loading) return <PageLoader />;
 

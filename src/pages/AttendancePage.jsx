@@ -105,12 +105,12 @@ export function AttendancePage() {
 
   // CA-level tile counts
   const caTiles = [
-    { label: 'No Action',              value: 'none',                         count: summaries.filter((s) => !s.caLevel).length },
-    { label: 'Verbal Warning',         value: 'Verbal Warning',               count: summaries.filter((s) => s.caLevel === 'Verbal Warning').length },
-    { label: 'Written Warning',        value: 'Written Warning',              count: summaries.filter((s) => s.caLevel === 'Written Warning').length },
-    { label: 'Final Written',          value: 'Final Written + Suspension',   count: summaries.filter((s) => s.caLevel === 'Final Written + Suspension').length },
-    { label: 'Termination Level',      value: 'Termination',                  count: summaries.filter((s) => s.caLevel === 'Termination').length },
-    { label: 'NCNS (12mo)',            value: 'ncns',                         count: summaries.filter((s) => s.ncns12mo >= 1).length },
+    { label: 'No Action',         value: 'none',                       color: 'gray',   count: summaries.filter((s) => !s.caLevel).length },
+    { label: 'Verbal Warning',    value: 'Verbal Warning',             color: 'yellow', count: summaries.filter((s) => s.caLevel === 'Verbal Warning').length },
+    { label: 'Written Warning',   value: 'Written Warning',            color: 'orange', count: summaries.filter((s) => s.caLevel === 'Written Warning').length },
+    { label: 'Final Written',     value: 'Final Written + Suspension', color: 'red',    count: summaries.filter((s) => s.caLevel === 'Final Written + Suspension').length },
+    { label: 'Termination Level', value: 'Termination',                color: 'red',    count: summaries.filter((s) => s.caLevel === 'Termination').length },
+    { label: 'NCNS (12mo)',       value: 'ncns',                       color: 'red',    count: summaries.filter((s) => s.ncns12mo >= 1).length },
   ].filter((t) => t.count > 0);
 
   const displayed = summaries.filter((s) => {

@@ -6,8 +6,40 @@ import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell, Legend,
 } from 'recharts';
+import { Users, UserCheck, TrendingUp, Clock } from 'lucide-react';
 import { Card, CardHeader, CardBody } from '../components/ui/Card.jsx';
 import { PageLoader } from '../components/ui/LoadingSpinner.jsx';
+
+const STAT_THEMES = {
+  blue:   { border: 'border-blue-500',   gradient: 'from-blue-50/70 to-white',   iconBg: 'bg-blue-500',   iconShadow: 'shadow-blue-200',   value: 'text-blue-600' },
+  green:  { border: 'border-green-500',  gradient: 'from-green-50/70 to-white',  iconBg: 'bg-green-500',  iconShadow: 'shadow-green-200',  value: 'text-green-600' },
+  yellow: { border: 'border-amber-400',  gradient: 'from-amber-50/70 to-white',  iconBg: 'bg-amber-400',  iconShadow: 'shadow-amber-200',  value: 'text-amber-600' },
+  purple: { border: 'border-purple-500', gradient: 'from-purple-50/70 to-white', iconBg: 'bg-purple-500', iconShadow: 'shadow-purple-200', value: 'text-purple-600' },
+};
+
+function StatCard({ label, value, sub, icon: Icon, color = 'blue' }) {
+  const t = STAT_THEMES[color] ?? STAT_THEMES.blue;
+  return (
+    <div className={`
+      relative flex flex-col justify-between rounded-xl
+      border border-gray-100 border-t-[3px] ${t.border}
+      bg-gradient-to-br ${t.gradient}
+      px-5 pt-4 pb-5 shadow-sm
+      transition-all duration-200 ease-out
+    `}>
+      <div className="flex justify-end">
+        <div className={`${t.iconBg} text-white p-2.5 rounded-lg shadow-md ${t.iconShadow}`}>
+          <Icon size={18} strokeWidth={2.2} />
+        </div>
+      </div>
+      <div className="mt-3">
+        <p className={`text-3xl font-bold tracking-tight leading-none ${t.value}`}>{value}</p>
+        <p className="mt-1.5 text-sm font-medium text-gray-600">{label}</p>
+        {sub && <p className="mt-1 text-xs text-gray-400">{sub}</p>}
+      </div>
+    </div>
+  );
+}
 
 const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#f97316', '#84cc16'];
 
@@ -103,17 +135,34 @@ export function AnalyticsPage() {
 
       {/* Summary stats */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        {[
-          { label: 'Total Workers (all time)', value: all },
-          { label: 'Active', value: `${active.length} / ${HEADCOUNT_GOAL}` },
-          { label: 'Retention Rate', value: `${retentionPct}%` },
-          { label: 'Avg Days Active', value: `${avgDaysActive}d` },
-        ].map((stat) => (
-          <Card key={stat.label} className="px-5 py-4">
-            <p className="text-2xl font-bold text-gray-900">{stat.value}</p>
-            <p className="text-sm text-gray-500 mt-0.5">{stat.label}</p>
-          </Card>
-        ))}
+        <StatCard
+          label="Total Workers"
+          value={all}
+          sub="All time"
+          icon={Users}
+          color="blue"
+        />
+        <StatCard
+          label="Active"
+          value={`${active.length} / ${HEADCOUNT_GOAL}`}
+          sub={`${Math.round((active.length / HEADCOUNT_GOAL) * 100)}% of goal`}
+          icon={UserCheck}
+          color={active.length >= HEADCOUNT_GOAL * 0.9 ? 'green' : 'yellow'}
+        />
+        <StatCard
+          label="Retention Rate"
+          value={`${retentionPct}%`}
+          sub="Active / all time"
+          icon={TrendingUp}
+          color={retentionPct >= 70 ? 'green' : 'yellow'}
+        />
+        <StatCard
+          label="Avg Days Active"
+          value={`${avgDaysActive}d`}
+          sub="Current active workers"
+          icon={Clock}
+          color="purple"
+        />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">

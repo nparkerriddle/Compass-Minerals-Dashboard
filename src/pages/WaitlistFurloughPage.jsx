@@ -51,8 +51,9 @@ export function WaitlistFurloughPage() {
   }, {});
   const deptTiles = Object.entries(deptCounts)
     .sort((a, b) => b[1] - a[1])
-    .map(([label, count]) => ({ label, count, value: label }));
+    .map(([label, count]) => ({ label, count, value: label, color: 'blue' }));
 
+  const INTENT_COLORS = { Yes: 'green', No: 'red', Maybe: 'yellow', 'Not Asked': 'gray' };
   const intentCounts = furloughed.reduce((acc, w) => {
     const v = w.intent_to_return || 'Not Asked';
     acc[v] = (acc[v] || 0) + 1;
@@ -60,13 +61,13 @@ export function WaitlistFurloughPage() {
   }, {});
   const intentTiles = Object.entries(intentCounts)
     .sort((a, b) => b[1] - a[1])
-    .map(([label, count]) => ({ label, count, value: label }));
+    .map(([label, count]) => ({ label, count, value: label, color: INTENT_COLORS[label] || 'gray' }));
 
   const statusTiles = [
-    { label: 'Furloughed', value: 'Furlough',               count: furloughed.length },
-    { label: 'Wait List',  value: 'Wait List',              count: waitlist.length },
-    { label: 'Pending',    value: 'Pending',                count: pending.length },
-    { label: 'No Response',value: 'Inactive - No Response', count: inactive.length },
+    { label: 'Furloughed',  value: 'Furlough',               color: 'purple', count: furloughed.length },
+    { label: 'Wait List',   value: 'Wait List',              color: 'purple', count: waitlist.length },
+    { label: 'Pending',     value: 'Pending',                color: 'blue',   count: pending.length },
+    { label: 'No Response', value: 'Inactive - No Response', color: 'gray',   count: inactive.length },
   ].filter((t) => t.count > 0);
 
   const filterWorkers = (list) => list.filter((w) => {

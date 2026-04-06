@@ -136,7 +136,7 @@ export function OnboardingPipelinePage() {
   }, {});
   const blockerTiles = Object.entries(blockerCounts)
     .filter(([, c]) => c > 0)
-    .map(([label, count]) => ({ label, count, value: label }));
+    .map(([label, count]) => ({ label, count, value: label, color: 'red' }));
 
   const deptCounts = pending.reduce((acc, w) => {
     const d = w.department || 'Unknown';
@@ -145,20 +145,14 @@ export function OnboardingPipelinePage() {
   }, {});
   const deptTiles = Object.entries(deptCounts)
     .sort((a, b) => b[1] - a[1])
-    .map(([label, count]) => ({ label, count, value: label }));
-
-  const stageTiles = [
-    { label: 'Waiting on Docs',       value: 'docs',      count: waitingOnDocs.length },
-    { label: 'Ready for Orientation', value: 'ready',     count: readyForOrientation.length },
-    { label: 'Orientation Scheduled', value: 'scheduled', count: orientationScheduled.length },
-    { label: 'First Day Pending',     value: 'firstday',  count: firstDayPending.length },
-  ].filter((t) => t.count > 0);
+    .map(([label, count]) => ({ label, count, value: label, color: 'blue' }));
 
   const filterByTile = (list) => {
     if (tileDept)    return list.filter((w) => (w.department || 'Unknown') === tileDept);
     if (tileBlocker) return list.filter((w) => getBlockers(w).includes(tileBlocker));
     return list;
   };
+
 
   return (
     <div className="space-y-5">
@@ -168,22 +162,22 @@ export function OnboardingPipelinePage() {
       </div>
 
       {/* Widget tiles */}
-      <div className="space-y-2">
-        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Pipeline Stage</p>
-        <FilterTiles tiles={stageTiles} selected={null} onSelect={() => {}} />
-        {deptTiles.length > 0 && (
-          <>
-            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide pt-1">By Department</p>
-            <FilterTiles tiles={deptTiles} selected={tileDept} onSelect={(v) => { setTileDept(v); setTileBlocker(null); }} />
-          </>
-        )}
-        {blockerTiles.length > 0 && (
-          <>
-            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide pt-1">Blocked By</p>
-            <FilterTiles tiles={blockerTiles} selected={tileBlocker} onSelect={(v) => { setTileBlocker(v); setTileDept(null); }} />
-          </>
-        )}
-      </div>
+      {(deptTiles.length > 0 || blockerTiles.length > 0) && (
+        <div className="space-y-2">
+          {deptTiles.length > 0 && (
+            <>
+              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">By Department</p>
+              <FilterTiles tiles={deptTiles} selected={tileDept} onSelect={(v) => { setTileDept(v); setTileBlocker(null); }} />
+            </>
+          )}
+          {blockerTiles.length > 0 && (
+            <>
+              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide pt-1">Blocked By</p>
+              <FilterTiles tiles={blockerTiles} selected={tileBlocker} onSelect={(v) => { setTileBlocker(v); setTileDept(null); }} />
+            </>
+          )}
+        </div>
+      )}
 
       {/* Pipeline columns */}
       <div className="flex gap-4 overflow-x-auto pb-2">
